@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>BunkMate</title>
 
 <style>
-* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+* { box-sizing: border-box; }
 
 body {
   margin: 0;
@@ -16,9 +16,9 @@ body {
 }
 
 header {
+  background: #020617;
   padding: 16px;
   text-align: center;
-  background: #020617;
   font-size: 22px;
   font-weight: 700;
 }
@@ -36,37 +36,37 @@ form {
   margin-bottom: 20px;
 }
 
-form h2 {
-  margin-bottom: 12px;
+label {
+  font-size: 14px;
+  display: block;
+  margin-top: 10px;
 }
 
 input {
   width: 100%;
   padding: 12px;
-  margin-bottom: 10px;
+  margin-top: 4px;
   border-radius: 8px;
   border: none;
   background: #1e293b;
-  color: white;
-  font-size: 16px;
+  color: #fff;
 }
 
 button {
+  margin-top: 12px;
   width: 100%;
   padding: 14px;
-  border-radius: 10px;
   border: none;
+  border-radius: 10px;
   background: #2563eb;
-  color: white;
+  color: #fff;
   font-weight: 600;
 }
 
-button:active { opacity: 0.85; }
-
 .subject {
   background: #020617;
-  border-radius: 14px;
   padding: 16px;
+  border-radius: 14px;
   margin-bottom: 14px;
 }
 
@@ -74,11 +74,18 @@ button:active { opacity: 0.85; }
 .subject.warn { border-left: 6px solid #eab308; }
 .subject.danger { border-left: 6px solid #dc2626; }
 
-.subject h3 { margin: 0 0 6px; }
+.progress-bg {
+  background: #334155;
+  height: 8px;
+  border-radius: 4px;
+  margin: 10px 0;
+  overflow: hidden;
+}
 
-.meta { font-size: 14px; opacity: 0.9; }
-
-.stats { font-size: 14px; line-height: 1.5; margin-top: 6px; }
+.progress-fill {
+  height: 100%;
+  transition: width 0.3s ease;
+}
 
 .actions {
   display: flex;
@@ -89,14 +96,11 @@ button:active { opacity: 0.85; }
 .actions button {
   background: #334155;
   font-size: 14px;
-  padding: 10px;
 }
-
-.sim { margin-top: 10px; }
 
 .empty {
   text-align: center;
-  opacity: 0.7;
+  opacity: 0.6;
   margin-top: 40px;
 }
 </style>
@@ -106,26 +110,38 @@ button:active { opacity: 0.85; }
 <header>BunkMate</header>
 
 <main>
-  <form id="subjectForm">
-    <h2>Add Subject</h2>
-    <input id="name" placeholder="Subject name" required />
-    <input id="attended" type="number" min="0" placeholder="Classes attended" required />
-    <input id="total" type="number" min="0" placeholder="Total classes conducted" required />
-    <input id="minimum" type="number" min="1" max="100" placeholder="Minimum attendance %" />
-    <button type="submit">Save Subject</button>
-  </form>
+<form id="subjectForm">
+  <label>Subject Name
+    <input id="name" required>
+  </label>
+  <label>Classes Attended
+    <input id="attended" type="number" min="0" required>
+  </label>
+  <label>Total Classes
+    <input id="total" type="number" min="0" required>
+  </label>
+  <label>Minimum Attendance %
+    <input id="minimum" type="number" min="1" max="100" placeholder="75">
+  </label>
+  <button>Add Subject</button>
+</form>
 
-  <div id="subjects"></div>
-  <div id="empty" class="empty" style="display:none;">No subjects yet</div>
+<div id="subjects"></div>
+<div id="empty" class="empty">No subjects yet</div>
 </main>
 
 <script>
-/* ================= STORAGE ================= */
 const STORAGE_KEY = "bunkmate-db";
 
+const nameInput = document.getElementById("name");
+const attendedInput = document.getElementById("attended");
+const totalInput = document.getElementById("total");
+const minimumInput = document.getElementById("minimum");
+const subjectsDiv = document.getElementById("subjects");
+const emptyDiv = document.getElementById("empty");
+
 function loadDB() {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  return raw ? JSON.parse(raw) : {
+  return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {
     settings: { defaultMinimumAttendance: 75 },
     subjects: []
   };
@@ -135,122 +151,65 @@ function saveDB(db) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
 }
 
-/* ================= MATH ================= */
 function attendancePercent(a, t) {
   return t === 0 ? 100 : (a / t) * 100;
 }
 
-function bunksAllowed(a, t, m) {
-  if (t === 0) return 0;
-  return Math.max(0, Math.floor((a * 100 / m) - t));
-}
-
-function classesToRecover(a, t, m) {
-  if (attendancePercent(a, t) >= m) return 0;
-  return Math.ceil((m * t - 100 * a) / (100 - m));
-}
-
-function statusClass(p, m) {
+function status(p, m) {
   if (p < m) return "danger";
   if (p <= m + 5) return "warn";
   return "safe";
 }
 
-/* ================= RENDER ================= */
 function render() {
   const db = loadDB();
-  const container = document.getElementById("subjects");
-  container.innerHTML = "";
+  subjectsDiv.innerHTML = "";
 
-  document.getElementById("empty").style.display =
-    db.subjects.length ? "none" : "block";
+  emptyDiv.style.display = db.subjects.length ? "none" : "block";
 
   db.subjects.forEach(s => {
     const p = attendancePercent(s.attended, s.total);
-    const card = document.createElement("div");
+    const color = p < s.minimumAttendance ? "#dc2626" :
+                  p <= s.minimumAttendance + 5 ? "#eab308" : "#16a34a";
 
-    card.className = `subject ${statusClass(p, s.minimumAttendance)}`;
-
-    card.innerHTML = `
+    const div = document.createElement("div");
+    div.className = `subject ${status(p, s.minimumAttendance)}`;
+    div.innerHTML = `
       <h3>${s.name}</h3>
-      <div class="meta">${s.attended} / ${s.total} classes</div>
-      <div class="stats">
-        Attendance: ${p.toFixed(2)}%<br>
-        Bunks allowed: ${bunksAllowed(s.attended, s.total, s.minimumAttendance)}<br>
-        Classes to recover: ${classesToRecover(s.attended, s.total, s.minimumAttendance)}
+      <div>${s.attended} / ${s.total} classes</div>
+
+      <div class="progress-bg">
+        <div class="progress-fill" style="width:${Math.min(p,100)}%;background:${color}"></div>
       </div>
 
-      <div class="sim">
-        <input type="number" min="0" placeholder="Simulate next X classes">
-        <div class="actions">
-          <button onclick="window.simulate('${s.id}','attend',this)">Attend</button>
-          <button onclick="window.simulate('${s.id}','bunk',this)">Bunk</button>
-        </div>
-      </div>
+      <div>${p.toFixed(2)}%</div>
 
       <div class="actions">
-        <button onclick="window.resetSubject('${s.id}')">Reset</button>
-        <button onclick="window.deleteSubject('${s.id}')">Delete</button>
+        <button data-action="attend" data-id="${s.id}">+ Attend</button>
+        <button data-action="bunk" data-id="${s.id}">+ Bunk</button>
+        <button data-action="delete" data-id="${s.id}">Delete</button>
       </div>
     `;
-    container.appendChild(card);
+    subjectsDiv.appendChild(div);
   });
 }
 
-/* ================= ACTIONS (GLOBAL) ================= */
-window.simulate = function(id, type, btn) {
-  const input = btn.closest(".sim").querySelector("input");
-  const x = Number(input.value);
-  if (!Number.isInteger(x) || x < 0) {
-    alert("Enter a valid number");
-    return;
-  }
-
-  const db = loadDB();
-  const s = db.subjects.find(sub => sub.id === id);
-  if (!s) return;
-
-  let a = s.attended;
-  let t = s.total;
-
-  if (type === "attend") { a += x; t += x; }
-  else { t += x; }
-
-  const result = attendancePercent(a, t).toFixed(2);
-  alert(`Resulting attendance: ${result}%`);
-};
-
-window.deleteSubject = function(id) {
-  const db = loadDB();
-  db.subjects = db.subjects.filter(s => s.id !== id);
-  saveDB(db);
-  render();
-};
-
-window.resetSubject = function(id) {
-  const db = loadDB();
-  const s = db.subjects.find(x => x.id === id);
-  if (s) { s.attended = 0; s.total = 0; }
-  saveDB(db);
-  render();
-};
-
-/* ================= FORM ================= */
 document.getElementById("subjectForm").addEventListener("submit", e => {
   e.preventDefault();
   const db = loadDB();
 
   const name = nameInput.value.trim();
-  const attended = +attendedInput.value;
-  const total = +totalInput.value;
-  const min = minimumInput.value
-    ? +minimumInput.value
-    : db.settings.defaultMinimumAttendance;
+  const attended = Number(attendedInput.value);
+  const total = Number(totalInput.value);
+  const min = Number(minimumInput.value) || db.settings.defaultMinimumAttendance;
 
-  if (attended > total) return alert("Attended cannot exceed total");
+  if (!name || attended < 0 || total < attended) {
+    alert("Invalid input");
+    return;
+  }
 
   db.subjects.push({
-    id: Date.now().toString(),
+    id: crypto.randomUUID(),
     name,
     attended,
     total,
@@ -262,11 +221,28 @@ document.getElementById("subjectForm").addEventListener("submit", e => {
   render();
 });
 
-/* ================= INIT ================= */
-const nameInput = document.getElementById("name");
-const attendedInput = document.getElementById("attended");
-const totalInput = document.getElementById("total");
-const minimumInput = document.getElementById("minimum");
+subjectsDiv.addEventListener("click", e => {
+  const btn = e.target.closest("button");
+  if (!btn) return;
+
+  const id = btn.dataset.id;
+  const action = btn.dataset.action;
+  const db = loadDB();
+  const s = db.subjects.find(x => x.id === id);
+  if (!s) return;
+
+  if (action === "attend") {
+    s.attended++;
+    s.total++;
+  } else if (action === "bunk") {
+    s.total++;
+  } else if (action === "delete") {
+    db.subjects = db.subjects.filter(x => x.id !== id);
+  }
+
+  saveDB(db);
+  render();
+});
 
 render();
 </script>
