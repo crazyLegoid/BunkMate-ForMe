@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>BunkMate</title>
+
+<style>
+/* =====================
+   GLOBAL / RESET
+   ===================== */
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  background: #0f172a;
+  color: #e5e7eb;
+}
+
+/* =====================
+   LAYOUT
+   ===================== */
+header {
+  padding: 16px;
+  text-align: center;
+  background: #020617;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+main {
+  padding: 16px;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+/* =====================
+   FORM
+   ===================== */
+form {
+  background: #020617;
+  padding: 16px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+}
+
+form h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+
+input {
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 10px;
+  border-radius: 8px;
+  border: none;
+  background: #1e293b;
+  color: #fff;
+  font-size: 16px;
+}
+
+button {
+  width: 100%;
+  padding: 14px;
+  border: none;
+  border-radius: 10px;
+  background: #2563eb;
+  color: white;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+button:active {
+  opacity: 0.8;
+}
+
+/* =====================
+   SUBJECT CARDS
+   ===================== */
+.subject {
+  background: #020617;
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 14px;
+}
+
+.subject.safe { border-left: 6px solid #16a34a; }
+.subject.warn { border-left: 6px solid #eab308; }
+.subject.danger { border-left: 6px solid #dc2626; }
+
+.subject h3 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+
+.meta {
+  font-size: 14px;
+  opacity: 0.9;
+  margin-bottom: 8px;
+}
+
+.stats {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.actions button {
+  flex: 1;
+  font-size: 14px;
+  padding: 10px;
+  background: #334155;
+}
+
+/* =====================
+   SIMULATION
+   ===================== */
+.sim {
+  margin-top: 10px;
+}
+
+.sim input {
+  margin-bottom: 6px;
+}
+
+/* =====================
+   EMPTY STATE
+   ===================== */
+.empty {
+  text-align: center;
+  opacity: 0.7;
+  margin-top: 40px;
+}
+</style>
+</head>
+
+<body>
+<header>BunkMate</header>
+
+<main>
+  <form id="subjectForm">
+    <h2>Add Subject</h2>
+    <input id="name" placeholder="Subject name" required />
+    <input id="attended" type="number" min="0" placeholder="Classes attended" required />
+    <input id="total" type="number" min="0" placeholder="Total classes conducted" required />
+    <input id="minimum" type="number" min="1" max="100" placeholder="Minimum attendance %" />
+    <button type="submit">Save Subject</button>
+  </form>
+
+  <div id="subjects"></div>
+  <div id="empty" class="empty" style="display:none;">No subjects yet</div>
+</main>
+
+<script>
+/* =====================
+   STORAGE LAYER
+   ===================== */
+const STORAGE_KEY = "bunkmate-db";
+
+function loadDB() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) {
+    return {
+      settings: { defaultMinimumAttendance: 75 },
+      subjects: []
+    };
+  }
+  return JSON.parse(raw);
+}
+
+function saveDB(db) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+}
+
+/* =====================
+   BUSINESS LOGIC
+   ===================== */
+function attendancePercent(attended, total) {
+  if (total === 0) return 100;
+  return (attended / total) * 100;
+}
+
+function bunksAllowed(attended, total, min) {
+  if (total === 0) return Infinity;
+  const max = (attended * 100 / min) - total;
+  return Math.max(0, Math.floor(max));
+}
+
+function classesToRecover(attended, total, min) {
+  const current = attendancePercent(attended, total);
+  if (current >= min) return 0;
+  if (min === 100) return Infinity;
+
+  const n = (min * total - 100 * attended) / (100 - min);
+  return Math.max(0, Math.ceil(n));
+}
+
+function statusClass(percent, min) {
+  if (percent < min) return "danger";
+  if (percent <= min + 5) return "warn";
+  return "safe";
+}
+
+/* =====================
+   UI RENDERING
+   ===================== */
+function render() {
+  const db = loadDB();
+  const container = document.getElementById("subjects");
+  container.innerHTML = "";
+
+  if (db.subjects.length === 0) {
+    document.getElementById("empty").style.display = "block";
+    return;
+  }
+
+  document.getElementById("empty").style.display = "none";
+
+  db.subjects.forEach(s => {
+    const percent = attendancePercent(s.attended, s.total);
+    const card = document.createElement("div");
+    card.className = `subject ${statusClass(percent, s.minimumAttendance)}`;
+
+    card.innerHTML = `
+      <h3>${s.name}</h3>
+      <div class="meta">${s.attended} / ${s.total} classes</div>
+      <div class="stats">
+        Attendance: ${percent.toFixed(2)}%<br/>
+        Bunks allowed: ${bunksAllowed(s.attended, s.total, s.minimumAttendance)}<br/>
+        Classes to recover: ${classesToRecover(s.attended, s.total, s.minimumAttendance)}
+      </div>
+
+      <div class="sim">
+        <input type="number" min="0" placeholder="Simulate next X classes" />
+        <div class="actions">
+          <button onclick="simulate('${s.id}', 'attend', this)">Attend</button>
+          <button onclick="simulate('${s.id}', 'bunk', this)">Bunk</button>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button onclick="resetSubject('${s.id}')">Reset</button>
+        <button onclick="deleteSubject('${s.id}')">Delete</button>
+      </div>
+    `;
+
+    container.appendChild(card);
+  });
+}
+
+/* =====================
+   EVENTS
+   ===================== */
+document.getElementById("subjectForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const db = loadDB();
+
+  const name = nameInput.value.trim();
+  const attended = parseInt(attendedInput.value, 10);
+  const total = parseInt(totalInput.value, 10);
+  const min = minimumInput.value
+    ? parseInt(minimumInput.value, 10)
+    : db.settings.defaultMinimumAttendance;
+
+  if (attended > total) return alert("Attended cannot exceed total");
+
+  db.subjects.push({
+    id: Date.now() + "-" + Math.random().toString(36).slice(2),
+    name,
+    attended,
+    total,
+    minimumAttendance: min
+  });
+
+  saveDB(db);
+  e.target.reset();
+  render();
+});
+
+function deleteSubject(id) {
+  const db = loadDB();
+  db.subjects = db.subjects.filter(s => s.id !== id);
+  saveDB(db);
+  render();
+}
+
+function resetSubject(id) {
+  const db = loadDB();
+  const s = db.subjects.find(x => x.id === id);
+  if (s) {
+    s.attended = 0;
+    s.total = 0;
+  }
+  saveDB(db);
+  render();
+}
+
+function simulate(id, type, btn) {
+  const input = btn.closest(".sim").querySelector("input");
+  const x = parseInt(input.value, 10);
+  if (isNaN(x) || x < 0) return;
+
+  const db = loadDB();
+  const s = db.subjects.find(x => x.id === id);
+  if (!s) return;
+
+  let attended = s.attended;
+  let total = s.total;
+
+  if (type === "attend") {
+    attended += x;
+    total += x;
+  } else {
+    total += x;
+  }
+
+  const percent = attendancePercent(attended, total);
+  alert(`Resulting attendance: ${percent.toFixed(2)}%`);
+}
+
+/* =====================
+   INIT
+   ===================== */
+const nameInput = document.getElementById("name");
+const attendedInput = document.getElementById("attended");
+const totalInput = document.getElementById("total");
+const minimumInput = document.getElementById("minimum");
+
+render();
+</script>
+</body>
+</html>
