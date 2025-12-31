@@ -87,6 +87,12 @@ button {
   transition: width 0.3s ease;
 }
 
+.recovery {
+  margin-top: 8px;
+  font-size: 14px;
+  color: #fecaca;
+}
+
 .actions {
   display: flex;
   gap: 8px;
@@ -140,6 +146,7 @@ const minimumInput = document.getElementById("minimum");
 const subjectsDiv = document.getElementById("subjects");
 const emptyDiv = document.getElementById("empty");
 
+/* ---------- STORAGE ---------- */
 function loadDB() {
   return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {
     settings: { defaultMinimumAttendance: 75 },
@@ -151,16 +158,33 @@ function saveDB(db) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
 }
 
+/* ---------- MATH ---------- */
 function attendancePercent(a, t) {
   return t === 0 ? 100 : (a / t) * 100;
 }
 
-function status(p, m) {
-  if (p < m) return "danger";
-  if (p <= m + 5) return "warn";
+/*
+  Classes needed to recover:
+  Find smallest n such that:
+  (a + n) / (t + n) >= min/100
+*/
+function classesToRecover(a, t, min) {
+  if (attendancePercent(a, t) >= min) return 0;
+  if (min === 100) return Infinity;
+
+  const required =
+    (min * t - 100 * a) / (100 - min);
+
+  return Math.max(0, Math.ceil(required));
+}
+
+function statusClass(p, min) {
+  if (p < min) return "danger";
+  if (p <= min + 5) return "warn";
   return "safe";
 }
 
+/* ---------- RENDER ---------- */
 function render() {
   const db = loadDB();
   subjectsDiv.innerHTML = "";
@@ -169,20 +193,33 @@ function render() {
 
   db.subjects.forEach(s => {
     const p = attendancePercent(s.attended, s.total);
-    const color = p < s.minimumAttendance ? "#dc2626" :
-                  p <= s.minimumAttendance + 5 ? "#eab308" : "#16a34a";
+    const recover = classesToRecover(s.attended, s.total, s.minimumAttendance);
 
-    const div = document.createElement("div");
-    div.className = `subject ${status(p, s.minimumAttendance)}`;
-    div.innerHTML = `
+    const color =
+      p < s.minimumAttendance ? "#dc2626" :
+      p <= s.minimumAttendance + 5 ? "#eab308" :
+      "#16a34a";
+
+    const card = document.createElement("div");
+    card.className = `subject ${statusClass(p, s.minimumAttendance)}`;
+
+    card.innerHTML = `
       <h3>${s.name}</h3>
       <div>${s.attended} / ${s.total} classes</div>
 
       <div class="progress-bg">
-        <div class="progress-fill" style="width:${Math.min(p,100)}%;background:${color}"></div>
+        <div class="progress-fill"
+             style="width:${Math.min(p,100)}%; background:${color}">
+        </div>
       </div>
 
       <div>${p.toFixed(2)}%</div>
+
+      ${recover > 0 ? `
+        <div class="recovery">
+          You need ${recover} more class${recover > 1 ? "es" : ""} for enough attendance.
+        </div>
+      ` : ""}
 
       <div class="actions">
         <button data-action="attend" data-id="${s.id}">+ Attend</button>
@@ -190,10 +227,12 @@ function render() {
         <button data-action="delete" data-id="${s.id}">Delete</button>
       </div>
     `;
-    subjectsDiv.appendChild(div);
+
+    subjectsDiv.appendChild(card);
   });
 }
 
+/* ---------- EVENTS ---------- */
 document.getElementById("subjectForm").addEventListener("submit", e => {
   e.preventDefault();
   const db = loadDB();
@@ -225,8 +264,7 @@ subjectsDiv.addEventListener("click", e => {
   const btn = e.target.closest("button");
   if (!btn) return;
 
-  const id = btn.dataset.id;
-  const action = btn.dataset.action;
+  const { id, action } = btn.dataset;
   const db = loadDB();
   const s = db.subjects.find(x => x.id === id);
   if (!s) return;
